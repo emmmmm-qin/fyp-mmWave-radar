@@ -1,17 +1,24 @@
 # TI IWRL6432BOOST research notes
 
-## Scope and source
+## Source and scope
 
-These notes are preparatory, not verification against a physical radar. The source reviewed is TI's [xWRL6432 MMWAVE-L-SDK Motion and Presence Detection OOB Demo](https://software-dl.ti.com/ra-processors/esd/MMWAVE-L-SDK/05_05_00_02/exports/api_guide_xwrL64xx/MOTION_AND_PRESENCE_DETECTION_DEMO.html). The rendered page identifies itself as **05.05.00.00**, although the URL contains `05_05_00_02`. The user's eventual firmware and SDK version are not established.
+The older [TI Motion and Presence Detection OOB demo page](https://software-dl.ti.com/ra-processors/esd/MMWAVE-L-SDK/05_05_00_02/exports/api_guide_xwrL64xx/MOTION_AND_PRESENCE_DETECTION_DEMO.html) describes a 52-byte frame header but shows fields that add up to 40 bytes. For this offline prototype, the specific wire layout is based on the installed [TI MMWAVE-L-SDK](https://www.ti.com/tool/MMWAVE-L-SDK) **05.05.04.02** sender and cross-checked against the installed Radar Toolbox **4.30.00.06** Applications Visualizer. The actual radar firmware and configuration have not been confirmed.
 
-The demo documentation describes a single UART for configuration and data, with one little-endian TLV packet per radar frame. Enabled outputs depend on configuration. The example has different presence and motion profiles. PresenceDetect uses minor-motion processing; MotionDetect supplies points for a tracker. The documented point formats include floating-point Cartesian coordinates and radial velocity, or a compressed format with units and separate major/minor counts. There is also a packed zone-presence output. These describe the cited demo, not all IWRL6432 firmware.
+| Wire detail | Evidence in the installed SDK |
+| --- | --- |
+| 40-byte little-endian header; sync word, platform `0x000A6432` and version `0x05050402` | `source/motion_detect.h` (`MmwDemo_output_message_header_t`); `source/motion_detect.c` (`mmwDemo_TransmitProcessedOutputTask` fills the header and transmits `sizeof` it); `source/mmw_cli.h` (version macros). |
+| TLV prefix is 8 bytes, length excludes prefix; packet is rounded up to 32 bytes | `source/motion_detect.c` accounts separately for prefix and payload, calculates `totalPacketLen`, then writes the padding. Padding contents are not checked. |
+| Compressed point cloud is TLV `301`; 20-byte scale/count block plus 10 bytes per point, maximum 100 points | `source/motion_detect.h` defines the ID, records and capacity; `source/dpc/dpc.c` fills scale factors and orders major points before minor points; `source/motion_detect.c` sends the cloud only with detections and point-cloud mode `2`. |
+| The supplied EVM profiles select compressed output | `profiles/xwrL64xx-evm/PresenceDetect.cfg` and `MotionDetect.cfg` both start `guiMonitor` with `2`. |
 
-## Unresolved protocol details
+SDK paths in the table are relative to `examples/mmw_demo/motion_and_presence_detection`. The Toolbox cross-check used `tools/visualizers/Applications_Visualizer/common/{parseFrame.py,parseTLVs.py,tlv_defines.py}`. The prototype does not include or depend on TI source files at build time.
 
-The documentation says the frame header is **52 bytes**, but its displayed structure lists four 16-bit magic words and eight 32-bit fields (40 bytes in total). Do not assume a header size or parser compatibility from this alone. Obtain and inspect the exact version's transmitting source and an independently captured byte stream before committing a wire format. TLV identifiers, actual length semantics, zero-point frames, enabled outputs, padding, frame timing, CLI startup and serial port settings must similarly be checked for the chosen firmware/configuration. No hardware communication has been tested.
+## What is implemented
 
-## What the current code does
+`core/ti_mpd_packet.*` decodes a single complete packet for the verified source layout, without UART or ESP-IDF dependencies. It exposes the frame number, reported total and major/minor point counts, coordinates in metres, radial velocity in m/s, and SNR/noise in dB. Other TLVs are skipped if their lengths fit; their contents are not validated. A valid packet may have no compressed cloud even with a non-zero reported count. Neither an absent cloud nor a frame reporting zero detections is sufficient to declare `VACANT`. Tests use hand-built synthetic byte arrays, not sensor recordings.
 
-`core/presence.*` is a small protocol-independent, deterministic state machine operating on already-normalized valid/invalid observations. Its sample parameters are placeholders for tests, not radar or FYP performance requirements. It cannot transform TI point clouds into presence or position. Synthetic inputs are deliberately isolated from the live monitor; no radar, position estimate, UART parser, or lamp output is implemented.
+The decoder is intentionally separate from `core/presence.*` and is not linked into the current ESP32 firmware. There is no UART stream framing or resynchronization, live radar input, position estimate, or lamp control.
 
-Next, once the radar arrives: record the exact firmware, SDK, profile and output configuration; test it with TI's tools; capture real UART traffic; resolve header and TLV behavior against that version's source; build parser fixtures from documented and real captures; verify signal levels, power, wiring and UART configuration against the applicable EVM guide before connecting the ESP32. Then integrate the parser, freshness policy and portable processing core without treating missing input as vacancy.
+## Before connecting hardware
+
+Record the EVM revision, exact firmware, SDK and profile. After confirming the board and UART setup against the applicable guide, run the TI Visualizer and capture representative UART packets, including frames with zero detections. Compare those bytes and decoded points with the pinned source/Visualizer before adapting the decoder or adding stream recovery. Verify duration and sequence behaviour on real captures before feeding observations to the presence state machine.
