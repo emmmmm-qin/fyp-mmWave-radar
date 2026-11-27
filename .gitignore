@@ -12,5 +12,6 @@ __pycache__/
 *.py[cod]
 recordings/
 *.radar
+Host_Radar_Software/dist
 
 .ccs-temp/
