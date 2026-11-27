@@ -8,6 +8,7 @@ using Sink = void (*)(const Frame&, std::uint64_t);
 class Stream {
 public:
     static constexpr std::size_t capacity = 8192;
+    void reset() { used_ = 0; }
     void feed(const std::uint8_t* bytes, std::size_t n, std::uint64_t now, Sink sink);
 private:
     void scan(std::uint64_t now, Sink sink, bool expired);
@@ -30,5 +31,7 @@ private:
 
 // Pass nullptr for an unavailable heartbeat. Returns length including LF or 0 on error.
 inline constexpr std::size_t line_capacity = 6144;
-std::size_t encode(char* out, std::size_t capacity, const Frame* frame, std::uint64_t now);
+enum class Source { Radar, Demo };
+std::size_t encode(char* out, std::size_t capacity, const Frame* frame, std::uint64_t now,
+                   Source source = Source::Radar);
 } // namespace fyp::radar

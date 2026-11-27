@@ -11,3 +11,8 @@ add_executable(ti_mpd_packet_test ti_mpd_packet_test.cpp ../core/ti_mpd_packet.c
 target_include_directories(ti_mpd_packet_test PRIVATE ../core)
 target_compile_features(ti_mpd_packet_test PRIVATE cxx_std_17)
 add_test(NAME ti_mpd_packet_test COMMAND ti_mpd_packet_test)
+
+add_executable(virtual_output_test virtual_output_test.cpp ../core/radar_stream.cpp ../core/ti_mpd_packet.cpp)
+target_include_directories(virtual_output_test PRIVATE ../core)
+target_compile_features(virtual_output_test PRIVATE cxx_std_17)
+add_test(NAME virtual_output_test COMMAND virtual_output_test)

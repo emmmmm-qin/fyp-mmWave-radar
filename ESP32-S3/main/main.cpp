@@ -2,6 +2,8 @@
 #include <cstdlib>
 #include "sdkconfig.h"
 #include "driver/uart.h"
+#include "driver/gpio.h"
+#include "virtual_output.h"
 #include "esp_timer.h"
 #include "radar_stream.h"
 #if !CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
@@ -18,7 +20,7 @@ namespace {
 constexpr char TAG[] = "fyp";
 constexpr uart_port_t port = static_cast<uart_port_t>(CONFIG_FYP_RADAR_UART);
 static_assert(CONFIG_FYP_RADAR_RX >= 4 && CONFIG_FYP_RADAR_RX <= 18);
-struct Sample { fyp::radar::Frame frame; std::uint64_t time; bool valid; };
+struct Sample { fyp::radar::Frame frame; std::uint64_t time; bool valid; fyp::radar::Source source; };
 QueueHandle_t mailbox;
 fyp::radar::Stream stream;
 fyp::radar::Heartbeat heartbeat;
@@ -36,7 +38,7 @@ void output(void*) {
     Sample sample;
     for (;;) {
         xQueueReceive(mailbox, &sample, portMAX_DELAY);
-        const auto n = fyp::radar::encode(line, sizeof line, sample.valid ? &sample.frame : nullptr, sample.time);
+        const auto n = fyp::radar::encode(line, sizeof line, sample.valid ? &sample.frame : nullptr, sample.time, sample.source);
         if (n) std::fwrite(line, 1, n, stdout);
     }
 }
@@ -57,12 +59,42 @@ esp_err_t configure_uart() {
 void receive(void*) {
     const auto err = configure_uart();
     if (err != ESP_OK) ESP_LOGE(TAG, "Radar UART initialization failed: %s", esp_err_to_name(err));
+    gpio_config_t boot{};
+    boot.pin_bit_mask = 1ULL << GPIO_NUM_0;
+    boot.mode = GPIO_MODE_INPUT;
+    boot.pull_up_en = GPIO_PULLUP_ENABLE;
+    const bool button_ready = gpio_config(&boot) == ESP_OK;
+    if (!button_ready) ESP_LOGE(TAG, "BOOT input unavailable; staying in radar mode");
+    fyp::radar::DoubleClick clicks;
+    std::uint64_t demo_start = 0, next_sample = 0;
     std::uint8_t bytes[512];
     for (;;) {
         const int n = err == ESP_OK ? uart_read_bytes(port, bytes, sizeof bytes, pdMS_TO_TICKS(20)) : 0;
         if (err != ESP_OK || n < 0) vTaskDelay(pdMS_TO_TICKS(50));
         const auto now = uptime();
-        stream.feed(bytes, n > 0 ? static_cast<std::size_t>(n) : 0, now, received);
+        if (button_ready && clicks.update(gpio_get_level(GPIO_NUM_0) == 0, now)) {
+            stream.reset();
+            if (err == ESP_OK) uart_flush_input(port);
+            if (latest.source == fyp::radar::Source::Demo) {
+                latest.source = fyp::radar::Source::Radar;
+                heartbeat = {};
+            } else {
+                latest.source = fyp::radar::Source::Demo;
+                demo_start = next_sample = now;
+            }
+            // Discard the read spanning the transition, then publish the new source immediately.
+        } else if (latest.source == fyp::radar::Source::Radar) {
+            stream.feed(bytes, n > 0 ? static_cast<std::size_t>(n) : 0, now, received);
+        }
+        if (latest.source == fyp::radar::Source::Demo) {
+            if (now >= next_sample) {
+                latest.valid = fyp::radar::virtual_frame(latest.frame, (now - demo_start) / 200);
+                latest.time = now;
+                xQueueOverwrite(mailbox, &latest);
+                next_sample = now + 200;
+            }
+            continue;
+        }
         if (heartbeat.due(now)) {
             latest.valid = false;
             latest.time = now;

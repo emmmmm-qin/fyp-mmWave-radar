@@ -1,6 +1,12 @@
 # ESP32-S3 radar telemetry bridge
 
-The firmware listens to an **externally configured and started** TI radar. It never sends CLI commands, fabricates frames, or decides occupancy. If no supported packet arrives, the PC receives `unavailable`, not an empty-room reading.
+By default the firmware listens to an **externally configured and started** TI radar. It never sends CLI commands or decides occupancy. Without valid input it reports `unavailable`, not an empty-room reading.
+
+## Validate over USB without a radar
+
+Connect the Windows viewer to the ESP32's native USB COM port (do not start the PC's Synthetic demo). After normal startup, quickly press and release **BOOT twice**. The transport remains `LIVE`, but `Source` changes from `radar` to `demo`. The board sends about five packets per second in a repeating 12-second cycle: **4 s moving point**, **4 s valid frame without a cloud**, **4 s data unavailable**. Record/replay preserves `source=demo`.
+
+Double-click BOOT again to resume radar input; if disconnected, expect `source=radar`, `state=unavailable`. No mode is saved across resets. Both clicks must be short (≤450 ms each), with releases within 550 ms; GPIO0 is debounced for 30 ms. Do not hold BOOT while powering up or pressing EN/RESET: that selects the [ROM download mode](https://docs.espressif.com/projects/esptool/en/latest/esp32s3/advanced-topics/boot-mode-selection.html). The test exercises the output and viewer, not the radar receiver or occupancy performance.
 
 ## Connect and configure
 
