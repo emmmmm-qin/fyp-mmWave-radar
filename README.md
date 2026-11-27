@@ -1,6 +1,6 @@
 # FYP radar ESP32-S3 bring-up template
 
-This minimal ESP-IDF C++ application checks the ESP32-S3 build, flash and serial logging path. It does not read or simulate radar data. It logs `presence=UNAVAILABLE` every two seconds because the radar input has not been implemented. It does not configure or drive a lamp GPIO.
+This ESP-IDF C++ application contains a protocol-independent presence-state prototype. On startup, it runs a clearly labelled synthetic self-test using a separate state machine. The live state logs `presence=UNAVAILABLE` every two seconds: there is no radar input, TI packet parser, position estimate or lamp GPIO implementation.
 
 Target defaults: ESP32-S3, 16 MB flash. PSRAM is not enabled or tested by this template. The configuration uses the default UART console; connect the DevKit's USB-to-UART port for the log.
 
@@ -9,4 +9,16 @@ idf.py build
 idf.py -p COM4 flash monitor
 ```
 
-Replace `COM4` with the actual port. This is an initial bring-up check, not validation of radar sensing, detection performance, lamp control, PSRAM or the FYP requirements. Add radar framing and freshness checks before producing occupancy decisions.
+Replace `COM4` with the actual port. This does not validate radar sensing, detection performance, lamp control, PSRAM or the FYP requirements. The state-machine timing and confirmation counts are test-only placeholders, not measured radar parameters.
+
+## Host tests
+
+With CMake, Ninja and a C++17 compiler installed:
+
+```sh
+cmake -S tests -B build/host-tests -G Ninja
+cmake --build build/host-tests
+ctest --test-dir build/host-tests --output-on-failure
+```
+
+The tests use synthetic observations; they are not TI radar captures. See [TI radar research notes](docs/ti_radar_research.md) for the chosen documentation, unresolved packet-format questions and the future hardware bring-up steps.
