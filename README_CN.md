@@ -11,7 +11,9 @@
 
 ## Windows 11 快速开始
 
-在仓库根目录打开 PowerShell，使用带 Tk 的 Python 3（开发环境为 Python 3.12）：
+**便携版：**双击 `mmWave-Radar.exe` 即可打开上位机，无需安装 Python、依赖或安装器。本地构建位置为 `Host_Radar_Software/dist/mmWave-Radar.exe`；`dist` 不随 Git 仓库分发。已在 Windows 11 x64 验证启动和正常退出；Windows 10 x64 尚未实测。需要从源码生成 EXE 时，请参阅[上位机打包说明](Host_Radar_Software/README.md#build-the-single-file-exe)。
+
+**从源码运行：**在仓库根目录打开 PowerShell，使用带 Tk 的 Python 3（开发环境为 Python 3.12）：
 
 ```powershell
 py -3 -m venv .venv

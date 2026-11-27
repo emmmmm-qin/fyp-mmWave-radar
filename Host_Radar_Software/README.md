@@ -1,5 +1,28 @@
 # Windows radar viewer
 
+## Run the portable viewer
+
+Double-click `mmWave-Radar.exe` on a Windows x64 PC. The EXE includes Python, Tcl/Tk and pyserial; there is no installer or companion DLL folder to copy. Launching and closing the local build on Windows 11 x64 left only the EXE in `dist`. Windows 10 x64 is a target, not yet a verified platform. PyInstaller extracts runtime files into the system temporary directory and normally removes them on exit. Recording a session intentionally writes a `.radar` file to your chosen location.
+
+## Build the single-file EXE
+
+For developers only: from the repository root in PowerShell, use **64-bit CPython 3.12 with Tk**. These commands keep the packaging environment, spec and intermediate files under `build`; only the EXE belongs in `dist`.
+
+```powershell
+$hostDir = 'Host_Radar_Software'
+py -3.12 -m venv "$hostDir/build/packaging-venv"
+$python = "$hostDir/build/packaging-venv/Scripts/python.exe"
+& $python -m pip install -r "$hostDir/requirements.txt" 'pyinstaller==6.22.3'
+& $python -m PyInstaller --onefile --windowed --noupx --name mmWave-Radar `
+    --specpath "$hostDir/build/spec" --workpath "$hostDir/build/pyinstaller" `
+    --distpath "$hostDir/dist" "$hostDir/radar_viewer.py"
+Get-FileHash "$hostDir/dist/mmWave-Radar.exe" -Algorithm SHA256
+```
+
+If distributing through GitHub Releases, attach just `dist/mmWave-Radar.exe` as a release asset, not the build directory. Building locally does not publish a release.
+
+## Run from source
+
 From the repository root, using a Windows Python 3 installation with Tkinter:
 
 ```powershell

@@ -2,6 +2,10 @@
 
 By default the firmware listens to an **externally configured and started** TI radar. It never sends CLI commands or decides occupancy. Without valid input it reports `unavailable`, not an empty-room reading.
 
+## Open the Windows viewer
+
+Start the portable `mmWave-Radar.exe` on the PC, or [run the viewer from source](../Host_Radar_Software/README.md). Both use the same R2 serial protocol. The EXE is **not** a firmware image: packaging or updating the viewer does not flash the ESP32. Close any other serial monitor before selecting the board's native USB COM port under **Connection**.
+
 ## Validate over USB without a radar
 
 Connect the Windows viewer to the ESP32's native USB COM port (do not start the PC's Synthetic demo). After normal startup, quickly press and release **BOOT twice**. The transport remains `LIVE`, but `Source` changes from `radar` to `demo`. The board sends about five packets per second in a repeating 12-second cycle: **4 s moving point**, **4 s valid frame without a cloud**, **4 s data unavailable**. Record/replay preserves `source=demo`.

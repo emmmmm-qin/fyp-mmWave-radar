@@ -10,7 +10,9 @@ Running IWRL6432BOOST MPD demo → radar application UART → ESP32-S3 decoder �
 
 ## Run the viewer on Windows
 
-From the repository root, with a Tk-enabled Python 3 installation (developed using Python 3.12):
+**Portable EXE:** Double-click `mmWave-Radar.exe`. No installer, Python installation or pip dependencies are needed on the viewing PC. The local build is at `Host_Radar_Software/dist/mmWave-Radar.exe`; this generated directory is not included in a Git checkout. Launch and normal exit were verified on Windows 11 x64; Windows 10 x64 has not yet been tested. See the [viewer packaging instructions](Host_Radar_Software/README.md#build-the-single-file-exe) to rebuild it.
+
+**From source:** From the repository root, with a Tk-enabled Python 3 installation (developed using Python 3.12):
 
 ```powershell
 py -3 -m venv .venv
