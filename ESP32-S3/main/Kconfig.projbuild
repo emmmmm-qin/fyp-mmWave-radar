@@ -1,0 +1,14 @@
+menu "FYP radar input"
+config FYP_RADAR_UART
+    int "Radar UART controller (not UART0)"
+    range 1 2
+    default 1
+config FYP_RADAR_RX
+    int "Radar data RX GPIO (verify free on your board)"
+    range 4 18
+    default 18
+config FYP_RADAR_BAUD
+    int "Radar data baud rate (8N1)"
+    range 115200 1250000
+    default 115200
+endmenu

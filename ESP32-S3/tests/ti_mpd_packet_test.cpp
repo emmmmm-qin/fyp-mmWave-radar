@@ -1,4 +1,7 @@
-#include "ti_mpd_packet.h"
+#include "radar_stream.h"
+#include <string>
+#include <cstring>
+#include <limits>
 
 #include <cstdio>
 #include <cstdlib>
@@ -73,9 +76,56 @@ void expect_status(const Bytes& bytes, DecodeStatus status, const char* label)
               "failure returns no partial frame");
     }
 }
+std::vector<std::uint32_t> frames;
+void collect(const fyp::radar::Frame& f, std::uint64_t) { frames.push_back(f.number); }
+void stream_checks(const Bytes& packet) {
+    using namespace fyp::radar;
+    Stream stream;
+    // Noise, a partial sync, then every possible two-chunk split and coalesced frames.
+    const Bytes noise{0xA5, 2, 1, 4, 2};
+    for (std::size_t split = 0; split <= packet.size(); ++split) {
+        frames.clear();
+        stream.feed(noise.data(), noise.size(), 10, collect);
+        stream.feed(packet.data(), split, 10, collect);
+        stream.feed(packet.data() + split, packet.size() - split, 11, collect);
+        check(frames == std::vector<std::uint32_t>{42}, "split sync/header/payload");
+    }
+    auto pair = packet;
+    pair.insert(pair.end(), packet.begin(), packet.end());
+    put_u32(pair, packet.size() + 20, UINT32_MAX);
+    frames.clear();
+    stream.feed(pair.data(), pair.size(), 20, collect);
+    check(frames == std::vector<std::uint32_t>{42, UINT32_MAX}, "coalesced frames");
+    for (auto length : {0u, 63u, 0xffffffe0u, 128u, 8192u}) {
+        auto bad = header(0, 1);
+        put_u32(bad, 12, length);
+        bad.insert(bad.end(), packet.begin(), packet.end());
+        frames.clear();
+        stream.feed(bad.data(), bad.size(), 100, collect);
+        stream.feed(nullptr, 0, 350, collect);
+        check(frames == std::vector<std::uint32_t>{42}, "recover embedded valid frame after reject/timeout");
+    }
+    auto slow = header(0, 1);
+    put_u32(slow, 12, 8192);
+    frames.clear();
+    stream.feed(slow.data(), slow.size(), 500, collect);
+    stream.feed(packet.data(), packet.size(), 510, collect);
+    for (unsigned t = 600; t <= 2500; t += 100) stream.feed(noise.data(), 1, t, collect);
+    check(frames == std::vector<std::uint32_t>{42}, "absolute deadline despite trickle");
+    Bytes garbage(Stream::capacity * 3, 0xf0);
+    garbage.insert(garbage.end(), packet.begin(), packet.end());
+    frames.clear();
+    stream.feed(garbage.data(), garbage.size(), 3000, collect);
+    check(frames == std::vector<std::uint32_t>{42}, "bounded long noise recovery");
+
+    Heartbeat hb;
+    check(hb.due(0) && !hb.due(999) && hb.due(1000), "waiting cadence");
+    hb.valid(1250);
+    check(!hb.due(3249) && hb.due(3250) && !hb.due(3251), "valid packet resets stale deadline");
+}
 } // namespace
 
-int main()
+int main(int argc, char** argv)
 {
     auto packet = header(2, 3);
     append_tlv(packet, 306, {1, 2, 3});
@@ -88,6 +138,25 @@ int main()
     check(decoded.status == DecodeStatus::Ok && frame.number == 42 &&
           frame.reported_point_count == 2 && frame.has_cloud() &&
           frame.major_count == 1 && frame.minor_count == 1, "mixed cloud and skipped TLVs");
+    char line[fyp::radar::line_capacity];
+    const auto n = fyp::radar::encode(line, sizeof line, &frame, 5300);
+    check(n && std::string(line) == "{\"protocol\":\"fyp-radar\",\"v\":1,\"source\":\"radar\",\"seq\":42,\"t_ms\":5300,\"state\":\"cloud\",\"points\":[[-1,2,-1.5],[0,0,16383.5]]}\n", "v1 cloud line");
+    if (argc == 2 && std::strcmp(argv[1], "--emit-fixture") == 0) {
+        if (failures) return EXIT_FAILURE;
+        std::fwrite(line, 1, n, stdout);
+        return EXIT_SUCCESS;
+    }
+    stream_checks(packet);
+    check(fyp::radar::encode(line, sizeof line, nullptr, UINT64_MAX) && std::string(line) ==
+        "{\"protocol\":\"fyp-radar\",\"v\":1,\"source\":\"radar\",\"seq\":0,\"t_ms\":18446744073709551615,\"state\":\"unavailable\",\"points\":[]}\n", "v1 waiting line");
+    auto full = frame;
+    full.major_count = 100;
+    full.minor_count = 0;
+    for (auto& p : full.points) p.x_m = p.y_m = p.radial_velocity_mps = -std::numeric_limits<float>::max();
+    check(fyp::radar::encode(line, sizeof line, &full, UINT64_MAX) != 0 &&
+          !fyp::radar::encode(line, 64, &full, UINT64_MAX), "100 extreme points fit; no partial output on short buffer");
+    full.points[99].x_m = std::numeric_limits<float>::infinity();
+    check(!fyp::radar::encode(line, sizeof line, &full, 0), "reject infinity");
     const auto& first = frame.points[0];
     check(first.x_m == -1.0f && first.y_m == 2.0f && first.z_m == 0.5f &&
           first.radial_velocity_mps == -1.5f && first.snr_db == 50.0f &&
@@ -101,6 +170,8 @@ int main()
         append_tlv(absent, 306, Bytes(16)); // 40 + 8 + 16, no padding required.
         finish(absent);
         const auto result = decode_packet(absent.data(), absent.size());
+        check(fyp::radar::encode(line, sizeof line, &result.frame, 12) && std::string(line) ==
+            "{\"protocol\":\"fyp-radar\",\"v\":1,\"source\":\"radar\",\"seq\":42,\"t_ms\":12,\"state\":\"no_cloud\",\"points\":[]}\n", "no cloud despite reported count");
         check(result.status == DecodeStatus::Ok && !result.frame.has_cloud() &&
               result.frame.reported_point_count == count, "cloud absent, not a vacancy decision");
     }

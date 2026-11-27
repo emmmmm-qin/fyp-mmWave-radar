@@ -1,30 +1,36 @@
-# FYP radar ESP32-S3 bring-up template
+# FYP radar gateway and 2D viewer
 
-This ESP-IDF C++ application contains a protocol-independent presence-state prototype. On startup, it runs a labelled synthetic self-test using a separate state machine. The live state logs `presence=UNAVAILABLE` every two seconds: there is no live radar input, position estimate or lamp GPIO output.
+[中文](README_CN.md) · [Firmware](ESP32-S3/README.md) · [Windows viewer](Host_Radar_Software/README.md) · [USB telemetry format](USB_PROTOCOL.md)
 
-Target defaults: ESP32-S3, 16 MB flash. PSRAM is not enabled or tested by this template. The configuration uses the default UART console; connect the DevKit's USB-to-UART port for the log.
+```text
+Running IWRL6432BOOST MPD demo → radar application UART → ESP32-S3 decoder → native USB-C COM port → Windows 11 viewer
+```
 
-```sh
+`ESP32-S3/` contains the ESP-IDF project, portable C++ core and native tests. `Host_Radar_Software/` contains the Python desktop application. The repository root is no longer an IDF project. The PC displays and records sensor-frame detections; point count is not a presence decision.
+
+## Run the viewer on Windows
+
+From the repository root, with a Tk-enabled Python 3 installation (developed using Python 3.12):
+
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r Host_Radar_Software/requirements.txt
+.\.venv\Scripts\python.exe Host_Radar_Software/radar_viewer.py
+```
+
+Select **Demo** to try the viewer without hardware. For live data, connect the DevKit's **native USB** connector using a data cable, close any serial monitor, refresh the ports and select the enumerated COM device. With the firmware running but no radar input, the viewer should receive unavailable status, not synthetic points. Replay and recordings are display telemetry, not raw TI binary captures.
+
+## Build the firmware / run C++ tests
+
+```powershell
+# In an activated ESP-IDF v6.1.1 terminal
+cd ESP32-S3
 idf.py build
-idf.py -p COM4 flash monitor
+cd ..
+# With CMake, Ninja and a C++17 compiler on PATH
+cmake -S ESP32-S3/tests -B ESP32-S3/build/host-tests -G Ninja
+cmake --build ESP32-S3/build/host-tests
+ctest --test-dir ESP32-S3/build/host-tests --output-on-failure
 ```
 
-Replace `COM4` with the actual port. This does not validate radar sensing, detection performance, lamp control, PSRAM or the FYP requirements. The state-machine timing and confirmation counts are test-only placeholders, not measured radar parameters.
-
-## Host tests
-
-With CMake, Ninja and a C++17 compiler installed:
-
-```sh
-cmake -S tests -B build/host-tests -G Ninja
-cmake --build build/host-tests
-ctest --test-dir build/host-tests --output-on-failure
-```
-
-The tests cover the presence state machine and the offline TI packet decoder using synthetic observations and byte arrays, not radar captures.
-
-## Offline TI packet decoding
-
-`core/ti_mpd_packet.*` decodes the compressed point cloud (TLV `301`) from one complete xWRL6432 Motion and Presence Detection packet for MMWAVE-L-SDK `05.05.04.02`. It returns sensor-frame coordinates, radial velocity, SNR/noise and major/minor point counts. Missing point data is not a vacancy decision.
-
-The decoder is not wired into the ESP32 firmware. It does not read UART, find packet boundaries in a stream, or infer occupancy. See the [TI radar notes](docs/ti_radar_research.md) for the source checks and what to verify when the radar arrives.
+The radar must already be configured and transmitting the supported xWRL6432 MPD profile (MMWAVE-L-SDK 05.05.04.02, compressed cloud TLV 301). See the [firmware setup](ESP32-S3/README.md) and [TI research notes](ESP32-S3/docs/ti_radar_research.md) before connecting the radar UART. Neither a demo nor an ESP32 heartbeat validates the real radar, position accuracy or occupancy detection.

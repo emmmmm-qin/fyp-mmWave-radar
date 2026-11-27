@@ -1,5 +1,14 @@
-/build/
-/sdkconfig
-/sdkconfig.old
-/managed_components/
-/.vscode/
+# Old root caches and the relocated ESP-IDF project
+build/
+build-host/
+sdkconfig
+sdkconfig.old
+managed_components/
+.vscode/
+
+# Windows viewer environments and local sessions
+.venv/
+__pycache__/
+*.py[cod]
+recordings/
+*.radar
