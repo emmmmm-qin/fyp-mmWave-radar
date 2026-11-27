@@ -4,7 +4,6 @@ build-host/
 sdkconfig
 sdkconfig.old
 managed_components/
-.ccs-temp/
 .vscode/
 
 # Windows viewer environments and local sessions
@@ -14,4 +13,4 @@ __pycache__/
 recordings/
 *.radar
 
-Host_Radar_Software/picture*.jpg
+.ccs-temp/
