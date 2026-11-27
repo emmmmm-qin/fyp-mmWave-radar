@@ -13,6 +13,7 @@ from hover_help import HoverHelp
 from plot import Plot
 from protocol import LineReader
 from session import Recorder, Replay
+from serial_monitor import SerialMonitor
 
 READ_BYTES = 8192
 STALE_SECONDS = 1.5
@@ -38,6 +39,8 @@ class Viewer:
         for tab, name in zip((top, session, demo, display, diagnostics),
                              ('Connection', 'Session', 'Demo', 'Display', 'Log')):
             self.nav.add(tab, text=name)
+        self.monitor_tab = ttk.Frame(self.nav, padding=6)
+        self.nav.add(self.monitor_tab, text='Serial Monitor')
         ttk.Label(top, text='Port').pack(side='left')
         self.port = ttk.Combobox(top, width=13)
         self.port.pack(side='left')
@@ -90,10 +93,16 @@ class Viewer:
             self.help.register(caption, explanation)
             self.help.register(number, explanation)
             self.metrics[name] = value
-        ttk.Label(root, text='Top-down viewer   ·   Sensor coordinates   /   +Y forward',
+        self.body = ttk.Frame(root)
+        self.body.pack(fill='both', expand=True, padx=10, pady=(0, 6))
+        self.monitor = SerialMonitor(self.monitor_tab, self.body, self.help)
+        self.chart = ttk.Frame(self.body)
+        self.chart.pack(fill='both', expand=True)
+        self.nav.bind('<<NotebookTabChanged>>', self.change_view)
+        ttk.Label(self.chart, text='Top-down viewer   ·   Sensor coordinates   /   +Y forward',
                   style='Caption.TLabel', padding=(12, 2)).pack(anchor='w')
-        self.plot = Plot(root)
-        self.plot.pack(fill='both', expand=True, padx=10, pady=(0, 6))
+        self.plot = Plot(self.chart)
+        self.plot.pack(fill='both', expand=True)
         ttk.Label(root, text='Event log', style='Caption.TLabel', padding=(12, 2)).pack(anchor='w')
         self.logbox = tk.Listbox(root, height=4, bg=theme.PANEL, fg=theme.MUTED, relief='flat',
                                  highlightthickness=0, selectbackground=theme.GRID, selectforeground=theme.TEXT)
@@ -124,6 +133,15 @@ class Viewer:
         self.render()
         self.timer = root.after(20, self.tick)
         root.protocol('WM_DELETE_WINDOW', self.close)
+
+    def change_view(self, _event=None):
+        if self.nav.select() == str(self.monitor_tab):
+            self.chart.pack_forget()
+            self.monitor.panel.pack(fill='both', expand=True)
+            self.monitor.resume()
+        else:
+            self.monitor.panel.pack_forget()
+            self.chart.pack(fill='both', expand=True)
 
     def log(self, text):
         self.logbox.insert('end', f'{time.strftime("%H:%M:%S")}  {text}')
@@ -157,6 +175,7 @@ class Viewer:
 
     def begin(self, mode):
         self.mode = mode
+        self.monitor.set_source(mode, self.port.get().strip() if mode == 'LIVE' else None)
         self.start = self.last = time.monotonic()
         self.frames = 0
         self.paused.set(False)
@@ -214,6 +233,7 @@ class Viewer:
                 self.log(f'Close failed: {exc}')
         self.stream = self.latest = self.shown = None
         self.mode = 'DISCONNECTED'
+        self.monitor.set_source(self.mode)
         self.frames = 0
         self.paused.set(False)
         self.render()
@@ -236,7 +256,9 @@ class Viewer:
             size = min(self.stream.in_waiting, READ_BYTES)
             if size:
                 errors = []
-                for result, error in self.reader.feed(self.stream.read(size)):
+                data = self.stream.read(size)
+                self.monitor.feed(data)
+                for result, error in self.reader.feed(data):
                     if error:
                         errors.append(error)
                     else:
@@ -270,6 +292,8 @@ class Viewer:
 
     def render(self, now=None):
         now = time.monotonic() if now is None else now
+        if self.nav.select() == str(self.monitor_tab):
+            self.monitor.render(now)
         stale = self.mode != 'DISCONNECTED' and now-self.last >= STALE_SECONDS
         if stale:
             self.shown = self.latest = None

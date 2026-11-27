@@ -1,20 +1,37 @@
-# ESP32 → PC telemetry v1
+# ESP32 → PC display telemetry
 
-This is a display protocol, not the TI binary UART format. The ESP32 obtains points from the pinned xWRL6432 MPD decoder. A Windows client opens the board's **native USB Serial/JTAG COM port** and consumes UTF-8/ASCII JSON objects, one per newline (LF or CRLF). Ignore console text and unsupported versions. No commands or acknowledgements are required from the PC.
+## R2 (current firmware)
 
-Synthetic illustration of a received frame (not a measurement):
+One ASCII record per line, terminated by LF. The reader also accepts CRLF. Fields are positional, comma-separated, with no quotes, whitespace, trailing comma, explicit point count or repeated keys. The prefix `R2` identifies this protocol and its version. This is the USB display stream, **not** the radar's native binary UART packets. No handshake or commands are required.
 
-```json
-{"protocol":"fyp-radar","v":1,"source":"radar","seq":42,"t_ms":5300,"state":"cloud","points":[[-0.25,1.5,-0.12],[0.11,1.4,0.08]]}
+```text
+R2,source,seq,t_ms,state[,x_m,y_m,radial_velocity_mps...]
+```
+
+Examples (illustrative, not measurements):
+
+```text
+R2,radar,0,8018,unavailable
+R2,radar,41,5200,no_cloud
+R2,demo,42,5300,cloud,-1,2,-1.5,0,1,0.25
 ```
 
 | Field | Meaning |
 | --- | --- |
-| `protocol`, `v` | Literal `fyp-radar` and integer `1`. |
-| `source` | `radar` for the ESP32 receive path, `demo` for explicitly generated samples. The viewer separately identifies playback. |
-| `seq` | Unsigned 32-bit TI frame number when available; `0` in an unavailable heartbeat. Gaps can occur. |
-| `t_ms` | Nonnegative integer milliseconds since ESP32 startup (demo uses its own clock), not wall time or TI acquisition time. |
-| `state` | `cloud`: decoded compressed points. `no_cloud`: valid packet without this point payload. `unavailable`: no current usable radar frame. |
-| `points` | Up to 100 triples `[x_m, y_m, radial_velocity_mps]` in sensor coordinates. Finite numbers; an empty array is required for `no_cloud` and `unavailable`. |
+| `source` | `radar` for the physical receiver path; `demo` for deliberately simulated samples. Neither indicates that a person was detected. |
+| `seq` | Unsigned 32-bit frame number; zero for an unavailable board heartbeat. May wrap or skip. |
+| `t_ms` | Unsigned 64-bit uptime in milliseconds. Not wall-clock or TI acquisition time. |
+| `state` | `cloud` requires 1–100 point triples. `no_cloud` means a valid input frame without the supported cloud; `unavailable` means no usable frame. Neither permits point fields. |
+| `x,y,v` | Finite numeric triples in sensor coordinates: metres, metres, radial m/s. Count is inferred from remaining fields. Firmware uses up to nine significant decimal digits for binary32 values, permitting scientific notation, without fixed-width padding. |
 
-The viewer plots X horizontally and Y forward, in metres; it does not infer identity, occupancy or a person's position. A heartbeat means the USB endpoint is alive, **not** that the radar is working. On stale input or disconnect do not continue presenting old points as live. This display protocol intentionally omits Z, SNR/noise, full TI TLVs and raw ADC samples; a saved viewer session is not a raw radar capture.
+A parser must accumulate through LF (reads can split/join records), bound line length, validate every field before publishing the frame, and discard the rest of an oversized line through LF. The viewer's maximum is 16 KiB before LF. Boot/debug text remains visible in the monitor but never refreshes radar state. The monitor and parser share one read of the COM port. A display recording saves accepted packets, **not** a lossless raw serial capture.
+
+## Migration from v1
+
+Update the Windows viewer first: it accepts current R2 records and the old seven-field NDJSON messages (`protocol`, `v`, `source`, `seq`, `t_ms`, `state`, `points`). For example:
+
+```json
+{"protocol":"fyp-radar","v":1,"source":"radar","seq":0,"t_ms":8018,"state":"unavailable","points":[]}
+```
+
+V2 firmware emits R2 only. Historical v1 recordings remain readable in the updated viewer; the `.radar` session container is versioned independently of the USB payload. Older viewers cannot interpret v2 telemetry. Format changes do not change the BOOT double-click behaviour, input UART baud, USB console configuration, or the distinction between simulated and sensor data.

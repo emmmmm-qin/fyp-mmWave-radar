@@ -20,6 +20,10 @@ py -3 -m venv .venv
 
 Select **Demo** to try the viewer without hardware. For live data, connect the DevKit's **native USB** connector using a data cable, close any serial monitor, refresh the ports and select the enumerated COM device. With the firmware running but no radar input, the viewer should receive unavailable status, not synthetic points. Replay and recordings are display telemetry, not raw TI binary captures.
 
+### Inspect the serial output
+
+Connect in **Connection**, then open the serial monitor tab. It uses the same live COM handle as the plot, so you can inspect boot messages, malformed lines and telemetry without starting another terminal. Firmware v2 emits compact ASCII records, for example `R2,radar,0,8018,unavailable`. Double-click BOOT on the running board to test the USB path with `demo` records; double-click again to return to radar input. The PC-only Demo is not serial traffic. Update the viewer before flashing v2: the new viewer also accepts old v1 JSON firmware and recordings, but old viewers cannot decode R2.
+
 ## Build the firmware / run C++ tests
 
 ```powershell

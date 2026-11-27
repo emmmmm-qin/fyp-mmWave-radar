@@ -1,4 +1,4 @@
-"""Check firmware-produced NDJSON with the Windows viewer's real serial parser."""
+"""Check firmware-produced frames with the Windows viewer's real serial parser."""
 import argparse
 from pathlib import Path
 import subprocess
@@ -18,7 +18,7 @@ def main():
             if error:
                 raise SystemExit(error)
             packets.append(item[0])
-    expected = {'protocol': 'fyp-radar', 'v': 1, 'source': 'radar', 'seq': 42,
+    expected = {'protocol': 'fyp-radar', 'v': 2, 'source': 'radar', 'seq': 42,
                 't_ms': 5300, 'state': 'cloud', 'points': [[-1, 2, -1.5], [0, 0, 16383.5]]}
     if packets != [expected]:
         raise SystemExit('Firmware fixture did not deliver the expected frame and coordinates')

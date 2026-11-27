@@ -128,7 +128,7 @@ class WindowTest(unittest.TestCase):
         app = self.app
         self.assertEqual(self.root.title(), 'mmWave Radar')
         self.assertEqual([app.nav.tab(t, 'text') for t in app.nav.tabs()],
-                         ['Connection', 'Session', 'Demo', 'Display', 'Log'])
+                         ['Connection', 'Session', 'Demo', 'Display', 'Log', 'Serial Monitor'])
         self.assertEqual(app.badge.cget('text'), 'Disconnected')
         self.button('Synthetic demo').invoke()
         app.poll(time.monotonic())

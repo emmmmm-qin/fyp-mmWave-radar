@@ -67,12 +67,15 @@ std::size_t encode(char* out, std::size_t capacity, const Frame* frame, std::uin
         return true;
     };
     const std::size_t count = frame ? std::size_t(frame->major_count) + frame->minor_count : 0;
-    if (count > ti_mpd::MAX_POINTS || !append("{\"protocol\":\"fyp-radar\",\"v\":1,\"source\":\"%s\",\"seq\":%" PRIu32 ",\"t_ms\":%" PRIu64 ",\"state\":\"%s\",\"points\":[", source == Source::Demo ? "demo" : "radar", frame ? frame->number : std::uint32_t{0}, now, !frame ? "unavailable" : count ? "cloud" : "no_cloud")) return 0;
+    if (!out || !capacity || count > ti_mpd::MAX_POINTS ||
+        !append("R2,%s,%" PRIu32 ",%" PRIu64 ",%s", source == Source::Demo ? "demo" : "radar",
+                frame ? frame->number : std::uint32_t{0}, now,
+                !frame ? "unavailable" : count ? "cloud" : "no_cloud")) return 0;
     for (std::size_t i = 0; i < count; ++i) {
         const auto& p = frame->points[i];
         if (!std::isfinite(p.x_m) || !std::isfinite(p.y_m) || !std::isfinite(p.radial_velocity_mps) ||
-            !append("%s[%.9g,%.9g,%.9g]", i ? "," : "", p.x_m, p.y_m, p.radial_velocity_mps)) return 0;
+            !append(",%.9g,%.9g,%.9g", p.x_m, p.y_m, p.radial_velocity_mps)) return 0;
     }
-    return append("]}\n") ? used : 0;
+    return append("\n") ? used : 0;
 }
 } // namespace fyp::radar

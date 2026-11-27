@@ -15,18 +15,13 @@ The navigation bar groups controls under **Connection**, **Session**, **Demo**, 
 
 In the **Top-down viewer**, the teal radar icon marks **(0, 0) at the bottom centre**. Its arrow points toward positive Y (forward). It stays visible while disconnected or zoomed and is never counted as a detection. For forward range R, X spans −R to +R (left and right) and Y spans 0 to R. The semicircles show equal distance increments, not the radar's field of view. Points behind the radar or outside the plot are hidden, but still counted and recorded. Hover over a visible point for X, Y and radial velocity. **Frames** counts accepted packets in the current input session. **Display seq**, **Source**, **Points** and state describe the displayed frame. Pause freezes the picture, not reception, frame counting or recording. Resume displays the newest packet. Empty frames, explicit loss of cloud, disconnect, and 1.5 seconds without a valid frame clear old detections even during pause. The log reports connection, recording, replay and parser errors; **Clear log** clears messages only.
 
-## Host protocol v1
+## Serial Monitor
 
-One ASCII JSON object per LF-terminated line (CRLF accepted), at most 16 KiB before the LF. All seven fields are required, with no extra or duplicate keys. Example:
+Select a port under **Connection**, connect, then open **Serial Monitor**. This is a read-only view of the same bytes the plot receives, before decoding. It shows partial lines, boot diagnostics, malformed records and telemetry. LF starts a new display line; other control and non-ASCII bytes are escaped. The newest 8192 bytes are retained and older discarded bytes are counted. Freeze the monitor to select and copy text; capture, plotting and recording continue. **Clear** only clears the monitor. Disconnect retains the last capture; starting demo or replay clears it because neither is a physical serial source.
 
-```json
-{"protocol":"fyp-radar","v":1,"source":"radar","seq":42,"t_ms":1234,"state":"cloud","points":[[-0.25,1.5,-0.2]]}
-```
+## Host protocol
 
-- `protocol` must be `fyp-radar`; `v` must be the integer `1`.
-- `source`: `radar` or `demo`. `seq`: unsigned 32-bit integer. `t_ms`: nonnegative integer producer timestamp. Neither arrival order nor replay timing is inferred from these counters.
-- `state`: `cloud`, `no_cloud`, or `unavailable`. `points`: 0–100 arrays of exactly three finite numbers `[x_m, y_m, radial_velocity_mps]`; booleans are not numbers. Both non-cloud states require `[]`.
-- Startup text is ignored. Invalid packet lines are logged and do not refresh the last-valid timer. After an oversized line the parser discards through LF and resumes.
+Current firmware emits one compact ASCII R2 record per LF, for example `R2,radar,42,1234,cloud,-0.25,1.5,-0.2`. The point fields are X (m), Y (m), and radial velocity (m/s), repeated per point. `no_cloud` and `unavailable` have no trailing fields. See [USB telemetry format](../USB_PROTOCOL.md) for limits and validation. V1 JSON from older firmware and recordings remains accepted. Startup text and rejected packets are not plotted or recorded. A board running BOOT-button simulation still produces actual COM traffic (`R2,demo,...`), unlike the viewer's own Synthetic demo.
 
 ## Record and replay
 

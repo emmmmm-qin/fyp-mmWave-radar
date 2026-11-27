@@ -29,8 +29,8 @@ int main(int argc, char** argv) {
         CHECK(valid == (phase != 2));
         CHECK(frame.has_cloud() == (phase == 0));
         CHECK(encode(line, sizeof line, valid ? &frame : nullptr, tick * 200, Source::Demo));
-        CHECK(std::strstr(line, "\"source\":\"demo\""));
-        CHECK(std::strstr(line, phase == 0 ? "\"state\":\"cloud\"" : phase == 1 ? "\"state\":\"no_cloud\"" : "\"state\":\"unavailable\""));
+        CHECK(std::strncmp(line, "R2,demo,", 8) == 0);
+        CHECK(std::strstr(line, phase == 0 ? ",cloud," : phase == 1 ? ",no_cloud\n" : ",unavailable\n"));
         if (argc == 2 && std::strcmp(argv[1], "--emit") == 0) std::fputs(line, stdout);
     }
     return 0;

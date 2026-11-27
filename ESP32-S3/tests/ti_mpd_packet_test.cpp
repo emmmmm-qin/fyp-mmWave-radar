@@ -140,7 +140,8 @@ int main(int argc, char** argv)
           frame.major_count == 1 && frame.minor_count == 1, "mixed cloud and skipped TLVs");
     char line[fyp::radar::line_capacity];
     const auto n = fyp::radar::encode(line, sizeof line, &frame, 5300);
-    check(n && std::string(line) == "{\"protocol\":\"fyp-radar\",\"v\":1,\"source\":\"radar\",\"seq\":42,\"t_ms\":5300,\"state\":\"cloud\",\"points\":[[-1,2,-1.5],[0,0,16383.5]]}\n", "v1 cloud line");
+    constexpr char expected[] = "R2,radar,42,5300,cloud,-1,2,-1.5,0,0,16383.5\n";
+    check(n == sizeof(expected) - 1 && std::string(line) == expected, "v2 cloud line including LF");
     if (argc == 2 && std::strcmp(argv[1], "--emit-fixture") == 0) {
         if (failures) return EXIT_FAILURE;
         std::fwrite(line, 1, n, stdout);
@@ -148,7 +149,7 @@ int main(int argc, char** argv)
     }
     stream_checks(packet);
     check(fyp::radar::encode(line, sizeof line, nullptr, UINT64_MAX) && std::string(line) ==
-        "{\"protocol\":\"fyp-radar\",\"v\":1,\"source\":\"radar\",\"seq\":0,\"t_ms\":18446744073709551615,\"state\":\"unavailable\",\"points\":[]}\n", "v1 waiting line");
+        "R2,radar,0,18446744073709551615,unavailable\n", "v2 waiting line");
     auto full = frame;
     full.major_count = 100;
     full.minor_count = 0;
@@ -157,6 +158,28 @@ int main(int argc, char** argv)
           !fyp::radar::encode(line, 64, &full, UINT64_MAX), "100 extreme points fit; no partial output on short buffer");
     full.points[99].x_m = std::numeric_limits<float>::infinity();
     check(!fyp::radar::encode(line, sizeof line, &full, 0), "reject infinity");
+    full.minor_count = 1;
+    full.points[99].x_m = 0;
+    check(!fyp::radar::encode(line, sizeof line, &full, 0), "reject 101 points");
+    full.major_count = 1;
+    full.minor_count = 0;
+    auto& point = full.points[0];
+    point.x_m = std::numeric_limits<float>::denorm_min();
+    point.y_m = -0.0f;
+    point.radial_velocity_mps = 1.23456788f;
+    check(fyp::radar::encode(line, sizeof line, &full, 0) != 0, "encode precision fixture");
+    char* cursor = std::strstr(line, ",cloud,");
+    check(cursor != nullptr, "precision fixture cloud header");
+    if (cursor) {
+        cursor += 7;
+        for (float original : {point.x_m, point.y_m, point.radial_velocity_mps}) {
+            char* end;
+            float parsed = std::strtof(cursor, &end);
+            check(end != cursor && std::memcmp(&original, &parsed, sizeof parsed) == 0,
+                  "native float bits survive decimal round trip");
+            cursor = end + 1;
+        }
+    }
     const auto& first = frame.points[0];
     check(first.x_m == -1.0f && first.y_m == 2.0f && first.z_m == 0.5f &&
           first.radial_velocity_mps == -1.5f && first.snr_db == 50.0f &&
@@ -171,7 +194,7 @@ int main(int argc, char** argv)
         finish(absent);
         const auto result = decode_packet(absent.data(), absent.size());
         check(fyp::radar::encode(line, sizeof line, &result.frame, 12) && std::string(line) ==
-            "{\"protocol\":\"fyp-radar\",\"v\":1,\"source\":\"radar\",\"seq\":42,\"t_ms\":12,\"state\":\"no_cloud\",\"points\":[]}\n", "no cloud despite reported count");
+            "R2,radar,42,12,no_cloud\n", "no cloud despite reported count");
         check(result.status == DecodeStatus::Ok && !result.frame.has_cloud() &&
               result.frame.reported_point_count == count, "cloud absent, not a vacancy decision");
     }
