@@ -4,6 +4,7 @@ build-host/
 sdkconfig
 sdkconfig.old
 managed_components/
+.ccs-temp/
 .vscode/
 
 # Windows viewer environments and local sessions
