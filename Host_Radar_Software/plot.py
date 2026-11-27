@@ -31,6 +31,13 @@ class Plot(tk.Canvas):
             self.create_text(cx-side-8, y, text=f'{n:g}', anchor='e')
         self.create_text(cx, cy+side+25, text='X (m)')
         self.create_text(cx, cy-side-15, text='Y (m) · forward')
+        # The sensor stays at the axes' intersection, even when no data is arriving.
+        self.create_line(cx, cy-10, cx, cy-32, arrow='last', width=2,
+                         fill='#0e695e', tags='sensor')
+        self.create_polygon(cx, cy-10, cx+8, cy+6, cx-8, cy+6,
+                            fill='#16796d', outline='#084a42', tags=('sensor', 'sensor-icon'))
+        self.create_text(cx+12, cy+12, text='Radar (0, 0)', anchor='nw',
+                         fill='#084a42', tags='sensor')
         for x, y, v in self.points:
             if abs(x) <= self.radius and abs(y) <= self.radius:
                 px, py = cx + scale*x, cy - scale*y

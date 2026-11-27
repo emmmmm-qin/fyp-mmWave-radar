@@ -19,7 +19,8 @@ STALE_SECONDS = 1.5
 class Viewer:
     def __init__(self, root):
         self.root = root
-        root.title('FYP radar · top-down viewer')
+        root.title('mmWave Radar')
+        root.minsize(660, 500)
         self.mode = 'DISCONNECTED'
         self.stream = self.recording = self.latest = self.shown = None
         self.frames = 0
@@ -27,8 +28,14 @@ class Viewer:
         self.paused = tk.BooleanVar()
         self.status = tk.StringVar()
         self.range = tk.StringVar(value='4')
-        top = ttk.Frame(root, padding=5)
-        top.pack(fill='x')
+        ttk.Label(root, text='mmWave Radar', padding=(12, 6),
+                  font=('Segoe UI', 18, 'bold')).pack(anchor='w')
+        self.nav = ttk.Notebook(root)
+        self.nav.pack(fill='x', padx=10)
+        top, session, display, diagnostics = [ttk.Frame(self.nav, padding=6) for _ in range(4)]
+        for tab, name in zip((top, session, display, diagnostics),
+                             ('Connection', 'Session', 'Display', 'Log')):
+            self.nav.add(tab, text=name)
         ttk.Label(top, text='Port').pack(side='left')
         self.port = ttk.Combobox(top, width=13)
         self.port.pack(side='left')
@@ -39,21 +46,37 @@ class Viewer:
         self.baud.pack(side='left')
         for label, cmd in [('Connect', self.connect), ('Disconnect / Stop', self.stop)]:
             ttk.Button(top, text=label, command=cmd).pack(side='left')
-        tools = ttk.Frame(root, padding=5)
-        tools.pack(fill='x')
-        for label, cmd in [('Synthetic demo', self.demo), ('Replay session…', self.replay), ('Record / Stop…', self.record)]:
-            ttk.Button(tools, text=label, command=cmd).pack(side='left')
-        ttk.Checkbutton(tools, text='Pause display', variable=self.paused, command=self.render).pack(side='left')
-        ttk.Label(tools, text='Range ±m').pack(side='left')
-        zoom = ttk.Combobox(tools, textvariable=self.range, state='readonly', width=4, values=(1, 2, 4, 8, 16, 32))
+        for label, cmd in [('Synthetic demo', self.demo), ('Replay session…', self.replay),
+                           ('Record / Stop…', self.record), ('Stop session', self.stop)]:
+            ttk.Button(session, text=label, command=cmd).pack(side='left', padx=2)
+        ttk.Checkbutton(display, text='Pause display', variable=self.paused, command=self.render).pack(side='left')
+        ttk.Label(display, text='Range ±m', padding=(12, 0)).pack(side='left')
+        zoom = ttk.Combobox(display, textvariable=self.range, state='readonly', width=4, values=(1, 2, 4, 8, 16, 32))
         zoom.pack(side='left')
         zoom.bind('<<ComboboxSelected>>', lambda _: self.render())
-        ttk.Label(root, textvariable=self.status, padding=5).pack(fill='x')
+        panel = tk.Frame(root, bg='#193449', padx=12, pady=8)
+        panel.pack(fill='x', padx=10, pady=8)
+        tk.Label(panel, text='RADAR STATUS', bg='#193449', fg='white',
+                 font=('Segoe UI', 11, 'bold')).grid(row=0, column=0, sticky='w')
+        self.badge = tk.Label(panel, padx=10, font=('Segoe UI', 10, 'bold'))
+        self.badge.grid(row=0, column=1, columnspan=2, sticky='w')
+        self.flags = tk.Label(panel, bg='#193449', fg='#ffda83')
+        self.flags.grid(row=0, column=3, columnspan=2, sticky='e')
+        self.metrics = {}
+        for col, name in enumerate(('Mode', 'Source', 'Frames', 'Display seq', 'Points')):
+            panel.columnconfigure(col, weight=1, uniform='metrics')
+            tk.Label(panel, text=name, bg='#193449', fg='#abc4d3').grid(row=1, column=col, sticky='w', pady=(7, 0))
+            value = tk.StringVar()
+            tk.Label(panel, textvariable=value, bg='#193449', fg='white',
+                     font=('Segoe UI', 10, 'bold')).grid(row=2, column=col, sticky='w')
+            self.metrics[name] = value
+        ttk.Label(root, text='Top-down viewer   ·   Sensor coordinates   /   +Y forward',
+                  padding=(12, 2)).pack(anchor='w')
         self.plot = Plot(root)
         self.plot.pack(fill='both', expand=True)
         self.logbox = tk.Listbox(root, height=5)
         self.logbox.pack(fill='x')
-        ttk.Button(root, text='Clear log', command=lambda: self.logbox.delete(0, 'end')).pack(anchor='e')
+        ttk.Button(diagnostics, text='Clear log', command=lambda: self.logbox.delete(0, 'end')).pack(side='left')
         self.log('Select Refresh to list ports, or start Synthetic demo without hardware.')
         self.render()
         self.timer = root.after(20, self.tick)
@@ -219,7 +242,18 @@ class Viewer:
         source = p['source'] if p else '—'
         seq = p['seq'] if p else '—'
         flags = (' | PAUSED' if self.paused.get() else '') + (' | RECORDING' if self.recording else '')
-        self.status.set(f'{self.mode}{flags} | {state} | Source: {source} | Frames: {self.frames} | Display seq: {seq} | Points: {len(points)}')
+        summary = f'{self.mode}{flags} | {state} | Source: {source} | Frames: {self.frames} | Display seq: {seq} | Points: {len(points)}'
+        if summary != self.status.get():
+            self.status.set(summary)
+            text, color = {
+                'idle': ('Disconnected', '#e2e8ef'), 'waiting': ('Waiting for a frame', '#ffe2a3'),
+                'STALE': ('Stale data', '#ffc9b9'), 'unavailable': ('Radar data unavailable', '#ffc9b9'),
+                'no_cloud': ('Frame without cloud', '#d6e6ef'), 'cloud': ('Point cloud', '#afe8da'),
+            }[state]
+            self.badge.configure(text=text, background=color, foreground='#152d3b')
+            self.flags.configure(text=flags.replace(' | ', '  ').strip())
+            for name, value in zip(self.metrics, (self.mode, source, self.frames, seq, len(points))):
+                self.metrics[name].set(value)
 
     def close(self):
         self.root.after_cancel(self.timer)
