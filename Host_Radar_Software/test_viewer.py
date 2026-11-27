@@ -128,7 +128,7 @@ class WindowTest(unittest.TestCase):
         app = self.app
         self.assertEqual(self.root.title(), 'mmWave Radar')
         self.assertEqual([app.nav.tab(t, 'text') for t in app.nav.tabs()],
-                         ['Connection', 'Session', 'Display', 'Log'])
+                         ['Connection', 'Session', 'Demo', 'Display', 'Log'])
         self.assertEqual(app.badge.cget('text'), 'Disconnected')
         self.button('Synthetic demo').invoke()
         app.poll(time.monotonic())
@@ -141,9 +141,40 @@ class WindowTest(unittest.TestCase):
             app.range.set(zoom)
             app.render()
             plot = app.plot
-            x, y = plot.winfo_width()/2, plot.winfo_height()/2
+            x, y = plot.winfo_width()/2, plot.winfo_height()-48
             self.assertEqual(plot.coords('sensor-icon'), [x, y-10, x+8, y+6, x-8, y+6])
             self.assertFalse(plot.find_withtag('point'))
+
+    def test_status_hover_help(self):
+        help_ui = self.app.help
+        for label in self.app.badge.master.winfo_children():
+            self.assertIn(label, help_ui.texts)
+        self.assertIn(self.app.baud, help_ui.texts)
+        self.assertEqual(help_ui.delay_ms, 1200)
+        help_ui.delay_ms = 10
+        self.app.badge.event_generate('<Enter>')
+        self.assertIsNone(help_ui.popup)
+        deadline = time.monotonic() + 1
+        while help_ui.popup is None and time.monotonic() < deadline:
+            self.root.update()
+        self.assertIsNotNone(help_ui.popup)
+        self.app.badge.event_generate('<Leave>')
+        self.assertIsNone(help_ui.popup)
+        self.app.badge.event_generate('<Enter>')
+        self.app.badge.event_generate('<ButtonPress-1>')
+        self.assertIsNone(help_ui.timer)
+
+    def test_front_view_clips_only_rendering(self):
+        self.app.demo()
+        raw = packet(points=[[-1, 2, 0], [1, 2, 0], [0, -1, 0], [0, 0, 0]])
+        now = time.monotonic()
+        self.app.accept(decode(raw), raw, now)
+        self.app.render(now)
+        self.assertEqual(len(self.app.plot.find_withtag('point')), 3)
+        self.assertEqual(self.app.metrics['Points'].get(), '4')
+        self.assertEqual(self.app.latest['points'][2], [0, -1, 0])
+        button = self.button('Synthetic demo')
+        self.assertEqual(self.app.nav.tab(button.master, 'text'), 'Demo')
 
     def test_read_budget_and_unplug(self):
         self.app.mode = 'LIVE'

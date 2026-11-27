@@ -8,6 +8,8 @@ from tkinter import filedialog, ttk
 import serial
 from serial.tools import list_ports
 
+import theme
+from hover_help import HoverHelp
 from plot import Plot
 from protocol import LineReader
 from session import Recorder, Replay
@@ -28,13 +30,13 @@ class Viewer:
         self.paused = tk.BooleanVar()
         self.status = tk.StringVar()
         self.range = tk.StringVar(value='4')
-        ttk.Label(root, text='mmWave Radar', padding=(12, 6),
-                  font=('Segoe UI', 18, 'bold')).pack(anchor='w')
+        theme.apply(root)
+        self.help = HoverHelp(root)
         self.nav = ttk.Notebook(root)
-        self.nav.pack(fill='x', padx=10)
-        top, session, display, diagnostics = [ttk.Frame(self.nav, padding=6) for _ in range(4)]
-        for tab, name in zip((top, session, display, diagnostics),
-                             ('Connection', 'Session', 'Display', 'Log')):
+        self.nav.pack(fill='x', padx=10, pady=(8, 0))
+        top, session, demo, display, diagnostics = [ttk.Frame(self.nav, padding=6) for _ in range(5)]
+        for tab, name in zip((top, session, demo, display, diagnostics),
+                             ('Connection', 'Session', 'Demo', 'Display', 'Log')):
             self.nav.add(tab, text=name)
         ttk.Label(top, text='Port').pack(side='left')
         self.port = ttk.Combobox(top, width=13)
@@ -46,37 +48,78 @@ class Viewer:
         self.baud.pack(side='left')
         for label, cmd in [('Connect', self.connect), ('Disconnect / Stop', self.stop)]:
             ttk.Button(top, text=label, command=cmd).pack(side='left')
-        for label, cmd in [('Synthetic demo', self.demo), ('Replay session…', self.replay),
+        ttk.Button(demo, text='Synthetic demo', command=self.demo).pack(side='left', padx=2)
+        ttk.Button(demo, text='Stop demo', command=lambda: self.stop() if self.mode == 'SYNTHETIC DEMO' else None).pack(side='left')
+        ttk.Label(demo, text='Simulated points · No device required', padding=(12, 0)).pack(side='left')
+        for label, cmd in [('Replay session…', self.replay),
                            ('Record / Stop…', self.record), ('Stop session', self.stop)]:
             ttk.Button(session, text=label, command=cmd).pack(side='left', padx=2)
         ttk.Checkbutton(display, text='Pause display', variable=self.paused, command=self.render).pack(side='left')
-        ttk.Label(display, text='Range ±m', padding=(12, 0)).pack(side='left')
+        ttk.Label(display, text='Forward range (m)', padding=(12, 0)).pack(side='left')
         zoom = ttk.Combobox(display, textvariable=self.range, state='readonly', width=4, values=(1, 2, 4, 8, 16, 32))
         zoom.pack(side='left')
         zoom.bind('<<ComboboxSelected>>', lambda _: self.render())
-        panel = tk.Frame(root, bg='#193449', padx=12, pady=8)
+        panel = tk.Frame(root, bg=theme.PANEL, padx=12, pady=8)
         panel.pack(fill='x', padx=10, pady=8)
-        tk.Label(panel, text='RADAR STATUS', bg='#193449', fg='white',
-                 font=('Segoe UI', 11, 'bold')).grid(row=0, column=0, sticky='w')
+        heading = tk.Label(panel, text='Radar status', bg=theme.PANEL, fg=theme.TEXT,
+                           font=('Segoe UI', 12, 'bold'))
+        heading.grid(row=0, column=0, sticky='w')
+        self.help.register(heading, 'Connection and display information. A working USB link does not guarantee fresh radar data.')
         self.badge = tk.Label(panel, padx=10, font=('Segoe UI', 10, 'bold'))
         self.badge.grid(row=0, column=1, columnspan=2, sticky='w')
-        self.flags = tk.Label(panel, bg='#193449', fg='#ffda83')
+        self.help.register(self.badge, 'State of the displayed data. Stale means no recent valid packet; unavailable means the device reports no usable frame. Neither means the room is empty.')
+        self.flags = tk.Label(panel, bg=theme.PANEL, fg=theme.ACCENT)
+        self.help.register(self.flags, 'Paused freezes the view only. Recording saves accepted packets, even while the display is paused.')
         self.flags.grid(row=0, column=3, columnspan=2, sticky='e')
         self.metrics = {}
-        for col, name in enumerate(('Mode', 'Source', 'Frames', 'Display seq', 'Points')):
+        metric_help = {
+            'Mode': 'Where the viewer is reading from: a live COM port, a recorded session, or the synthetic demo.',
+            'Source': 'Origin declared by the displayed packet: radar or demo. Replaying a recording preserves its original source.',
+            'Frames': 'Total accepted packets in this session, including status messages. This keeps counting while the picture is paused.',
+            'Display seq': 'Sequence number in the displayed packet, not the number of received frames. An unavailable heartbeat uses zero.',
+            'Points': 'Number of detections in the displayed packet, including points outside the chart. This is not a count of people.',
+        }
+        for col, (name, explanation) in enumerate(metric_help.items()):
             panel.columnconfigure(col, weight=1, uniform='metrics')
-            tk.Label(panel, text=name, bg='#193449', fg='#abc4d3').grid(row=1, column=col, sticky='w', pady=(7, 0))
+            caption = tk.Label(panel, text=name, anchor='w', bg=theme.PANEL, fg=theme.MUTED)
+            caption.grid(row=1, column=col, sticky='ew', pady=(8, 0))
             value = tk.StringVar()
-            tk.Label(panel, textvariable=value, bg='#193449', fg='white',
-                     font=('Segoe UI', 10, 'bold')).grid(row=2, column=col, sticky='w')
+            number = tk.Label(panel, textvariable=value, anchor='w', bg=theme.PANEL, fg=theme.TEXT,
+                              font=('Segoe UI', 11, 'bold'))
+            number.grid(row=2, column=col, sticky='ew')
+            self.help.register(caption, explanation)
+            self.help.register(number, explanation)
             self.metrics[name] = value
         ttk.Label(root, text='Top-down viewer   ·   Sensor coordinates   /   +Y forward',
-                  padding=(12, 2)).pack(anchor='w')
+                  style='Caption.TLabel', padding=(12, 2)).pack(anchor='w')
         self.plot = Plot(root)
-        self.plot.pack(fill='both', expand=True)
-        self.logbox = tk.Listbox(root, height=5)
-        self.logbox.pack(fill='x')
+        self.plot.pack(fill='both', expand=True, padx=10, pady=(0, 6))
+        ttk.Label(root, text='Event log', style='Caption.TLabel', padding=(12, 2)).pack(anchor='w')
+        self.logbox = tk.Listbox(root, height=4, bg=theme.PANEL, fg=theme.MUTED, relief='flat',
+                                 highlightthickness=0, selectbackground=theme.GRID, selectforeground=theme.TEXT)
+        self.logbox.pack(fill='x', padx=10, pady=(0, 8))
         ttk.Button(diagnostics, text='Clear log', command=lambda: self.logbox.delete(0, 'end')).pack(side='left')
+        controls = {
+            'Port': 'Choose the Windows COM port of the ESP32 native USB connector.',
+            'Baud': 'Host serial setting, normally 115200. This does not change the TI radar UART speed.',
+            'Refresh': 'Find available COM ports without opening them.',
+            'Connect': 'Start reading from the selected COM port. Close other serial monitors first.',
+            'Disconnect / Stop': 'Stop the active input, close any recording and clear the displayed points.',
+            'Synthetic demo': 'Generate example points on this PC; no device or serial connection is used.',
+            'Stop demo': 'Stop the synthetic input without affecting a live connection or replay.',
+            'Replay session…': 'Open a saved .radar file and replay it using its recorded arrival times.',
+            'Record / Stop…': 'Start or stop saving accepted packets from live input or the demo.',
+            'Stop session': 'End the active input session and close the recording if one is open.',
+            'Pause display': 'Freeze the picture without stopping reception or recording. Stale detections still clear.',
+            'Forward range (m)': 'Set the visible forward distance in metres. Left and right span the same distance; zoom never changes recorded points.',
+            'Clear log': 'Clear the event messages on screen. Saved session files are not changed.',
+        }
+        for tab in (top, session, demo, display, diagnostics):
+            for widget in tab.winfo_children():
+                if 'text' in widget.keys() and widget.cget('text') in controls:
+                    self.help.register(widget, controls[widget.cget('text')])
+        for widget, key in ((self.port, 'Port'), (self.baud, 'Baud'), (zoom, 'Forward range (m)')):
+            self.help.register(widget, controls[key])
         self.log('Select Refresh to list ports, or start Synthetic demo without hardware.')
         self.render()
         self.timer = root.after(20, self.tick)
@@ -246,9 +289,9 @@ class Viewer:
         if summary != self.status.get():
             self.status.set(summary)
             text, color = {
-                'idle': ('Disconnected', '#e2e8ef'), 'waiting': ('Waiting for a frame', '#ffe2a3'),
-                'STALE': ('Stale data', '#ffc9b9'), 'unavailable': ('Radar data unavailable', '#ffc9b9'),
-                'no_cloud': ('Frame without cloud', '#d6e6ef'), 'cloud': ('Point cloud', '#afe8da'),
+                'idle': ('Disconnected', '#e9edf1'), 'waiting': ('Waiting for a frame', '#f6efde'),
+                'STALE': ('Stale data', '#f6e9e4'), 'unavailable': ('Radar data unavailable', '#f6e9e4'),
+                'no_cloud': ('Frame without cloud', '#e7eef4'), 'cloud': ('Point cloud', theme.SELECTED),
             }[state]
             self.badge.configure(text=text, background=color, foreground='#152d3b')
             self.flags.configure(text=flags.replace(' | ', '  ').strip())
@@ -256,6 +299,7 @@ class Viewer:
                 self.metrics[name].set(value)
 
     def close(self):
+        self.help.hide()
         self.root.after_cancel(self.timer)
         self.stop()
         self.root.destroy()
