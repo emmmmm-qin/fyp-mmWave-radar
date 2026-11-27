@@ -88,9 +88,11 @@ class WindowTest(unittest.TestCase):
         self.addCleanup(self.app.close)
 
     def button(self, label):
-        for frame in self.root.winfo_children():
+        for tab in self.app.nav.tabs():
+            frame = self.root.nametowidget(tab)
             for child in frame.winfo_children():
                 if 'text' in child.keys() and child.cget('text') == label:
+                    self.app.nav.select(tab)
                     return child
         self.fail(f'button not found: {label}')
 
@@ -121,6 +123,27 @@ class WindowTest(unittest.TestCase):
         self.button('Disconnect / Stop').invoke()
         self.assertFalse(port.is_open)
         self.assertIn('DISCONNECTED', self.app.status.get())
+
+    def test_navigation_status_and_sensor_origin(self):
+        app = self.app
+        self.assertEqual(self.root.title(), 'mmWave Radar')
+        self.assertEqual([app.nav.tab(t, 'text') for t in app.nav.tabs()],
+                         ['Connection', 'Session', 'Display', 'Log'])
+        self.assertEqual(app.badge.cget('text'), 'Disconnected')
+        self.button('Synthetic demo').invoke()
+        app.poll(time.monotonic())
+        self.assertEqual(app.badge.cget('text'), 'Point cloud')
+        self.assertEqual(app.metrics['Source'].get(), 'demo')
+        self.button('Clear log').invoke()
+        self.assertEqual(app.logbox.size(), 0)
+        app.stop()
+        for zoom in ('1', '8'):
+            app.range.set(zoom)
+            app.render()
+            plot = app.plot
+            x, y = plot.winfo_width()/2, plot.winfo_height()/2
+            self.assertEqual(plot.coords('sensor-icon'), [x, y-10, x+8, y+6, x-8, y+6])
+            self.assertFalse(plot.find_withtag('point'))
 
     def test_read_budget_and_unplug(self):
         self.app.mode = 'LIVE'
